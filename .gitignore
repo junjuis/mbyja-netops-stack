@@ -1,4 +1,4 @@
 # Ignorar archivos con secretos
 .env
-.env.*
+!.env.sample
 letsencrypt/

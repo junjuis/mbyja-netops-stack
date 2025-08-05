@@ -6,21 +6,23 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./letsencrypt:/letsencrypt
-    environment:
-      - CF_API_TOKEN=${CF_API_TOKEN}
     command:
       - "--providers.docker=true"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--certificatesresolvers.le.acme.email=${EMAIL_ACME}"
       - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
-      - "--certificatesresolvers.le.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+
   portainer:
+    ports: ["9000:9000"]
     image: portainer/portainer-ce:latest
     volumes: ["/var/run/docker.sock:/var/run/docker.sock", "portainer_data:/data"]
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.portainer.rule=Host(`docker.${DOMAIN_BASE}`)"
+      - "traefik.http.routers.portainer.rule=Host(`pt.${DOMAIN_BASE}`)"
       - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls.certresolver=le"
 volumes:
