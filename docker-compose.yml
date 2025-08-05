@@ -1,29 +1,105 @@
-version: "3.8"
+version: "3.9"
+
 services:
+###############################################################################
+#  TRAEFIK  – reverse-proxy + HTTPS automático (HTTP-01)                      #
+###############################################################################
   traefik:
     image: traefik:v3.0
-    ports: ["80:80", "443:443"]
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./letsencrypt:/letsencrypt
+    container_name: traefik
+    restart: unless-stopped
     command:
       - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--api.dashboard=true"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--certificatesresolvers.le.acme.email=${EMAIL_ACME}"
       - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
       - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./letsencrypt:/letsencrypt
 
+###############################################################################
+#  PORTAINER – GUI Docker                                                     #
+###############################################################################
   portainer:
-    ports: ["9000:9000"]
     image: portainer/portainer-ce:latest
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock", "portainer_data:/data"]
+    restart: unless-stopped
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.portainer.rule=Host(`pt.${DOMAIN_BASE}`)"
+      - "traefik.http.routers.portainer.rule=Host(`${PORTAINER_HOST}`)"
       - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls.certresolver=le"
+    command: -H unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+###############################################################################
+#  NETBOX – IPAM / Source-of-Truth                                            #
+###############################################################################
+  netbox:
+    image: netboxcommunity/netbox:v4.0
+    restart: unless-stopped
+    env_file: .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.netbox.rule=Host(`${NETBOX_HOST}`)"
+      - "traefik.http.routers.netbox.entrypoints=websecure"
+      - "traefik.http.routers.netbox.tls.certresolver=le"
+    volumes:
+      - netbox_media:/opt/netbox/netbox/media
+
+###############################################################################
+#  MIKROWIZARD – gestión de RouterOS                                          #
+###############################################################################
+  mikrowizard:
+    image: ghcr.io/mikrowizard/mikrowizard:latest
+    restart: unless-stopped
+    env_file: .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mw.rule=Host(`${MIKROWIZARD_HOST}`)"
+      - "traefik.http.routers.mw.entrypoints=websecure"
+      - "traefik.http.routers.mw.tls.certresolver=le"
+
+###############################################################################
+#  AUTHENTIK – SSO + RADIUS                                                   #
+###############################################################################
+  authentik:
+    image: ghcr.io/goauthentik/server:2025.5.0
+    restart: unless-stopped
+    env_file: .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=Host(`${AUTHENTIK_HOST}`)"
+      - "traefik.http.routers.auth.entrypoints=websecure"
+      - "traefik.http.routers.auth.tls.certresolver=le"
+    volumes:
+      - authentik_media:/media
+      - authentik_static:/static
+
+###############################################################################
+#  ZABBIX appliance (server + web)                                            #
+###############################################################################
+  zabbix:
+    image: zabbix/zabbix-appliance:7.0-latest
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.zbx.rule=Host(`${ZABBIX_HOST}`)"
+      - "traefik.http.routers.zbx.entrypoints=websecure"
+      - "traefik.http.routers.zbx.tls.certresolver=le"
+
 volumes:
   portainer_data:
+  netbox_media:
+  authentik_media:
+  authentik_static:
